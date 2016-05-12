@@ -1,5 +1,7 @@
 # No Limit Lottery
 
+In this implementation we wish to create a lottery on the Ethereum network using a provably secure decentralized random number generation scheme which allows for unlimited ticket purchases and prize winnings. 
+
 Most Ethereum based lotteries use a blockhash in order to generate a random number so that a winner can be selected. The problem with this approach is that a miner who has also purchased tickets can potentially pass up a solution to a block in the hopes of finding another one which gives them an edge in winning the lottery. To avoid this lotteries place a 5 ETH limit on the winnings (equal to the block reward) so that miners have no incentive to risk losing a block in order to sway the outcome.
 
 One option to avoid using a blockhash is to have participants commit random numbers hashed by their public address. Once the numbers have been committed they are revealed so that they can be combined into a final random number used to select a winner. The revealed numbers can be checked against the submitted hashes to prove that they were in fact the secret numbers which were originally committed.
