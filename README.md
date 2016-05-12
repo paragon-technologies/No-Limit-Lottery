@@ -18,7 +18,7 @@ Once the solutions are committed they are revealed and any correct answers with 
 
 Any incorrect submissions result in lost bets whereas correct solutions result in lottery fee rewards paid out according to (1) submission time and (2) bet size. In particular the number of "points" awarded to a solver is inversely proportional to the number of blocks it took to commit a solution and directly proportional to the amount of the bet. Their share of the fees then is respresented by their percentage of the overall number of points earned by all solvers.
 
-In general here are the phases of a Super Lottery:
+Here are the phases of the No Limit Lottery:
 
 (1) COMMIT PHASE - Players purchase tickets by sending X ETH to the contract along with a hash of their public key together with a random number of a specified length (thus keeping their choice of random number a secret).
 
