@@ -30,7 +30,6 @@ contract NoLimitLottery is owned {
 	uint public secretLength;
 	bytes32 public finalSeed;
 	bytes32 public correctSolution;
-	uint public lowestNonce;
 	uint private totalSolverBets;
 	
 	// The length of time (in number of blocks) for the different phases
@@ -42,11 +41,15 @@ contract NoLimitLottery is owned {
 	uint public solutionBlocks;
 	uint public solutionRevealBlocks;
 	
-	address[] private addrSubmittedValidTicket;
-	address[] private addrWithValidSolutions;
+	address[] private addrPlayers;
+	uint private addrPlayersCount;
+	address[] private addrSolvers;
+	uint private addrSolversCount;
 	address[] private winners;
+	uint private winnersCount;
 	
 	mapping(address => Ticket[]) private tickets;
+	mapping(address => uint) private ticketCounts;
 	mapping(address => Solution) private solutions;
 	
 	struct Ticket {
@@ -97,9 +100,6 @@ contract NoLimitLottery is owned {
 		else if (functionName == bytes32('createLottery') && phaseBytes32 == bytes32('No Lottery')) {
 			_
 		}
-		else if (functionName == bytes32('clearData') && phaseBytes32 == bytes32('Clear Data')) {
-			_
-		}
 	}
 	
 	function setPhase() returns (bytes32) {
@@ -114,7 +114,7 @@ contract NoLimitLottery is owned {
 			phase = 'Reveal Tickets';
 			return bytes32('Reveal Tickets');
 		}
-		else if (finalSeed == bytes32(0)) {
+		else if (finalSeed == bytes32(0) && block.number > startBlock ) {
 			phase = 'Determine Seed';
 			return bytes32('Determine Seed');
 		}
@@ -126,15 +126,28 @@ contract NoLimitLottery is owned {
 			phase = 'Reveal Solutions';
 			return bytes32('Reveal Solutions');
 		}
-		else if (correctSolution == bytes32(0)) {
+		else if (correctSolution == bytes32(0) && block.number > startBlock) {
 			phase = 'Determine Winner';
 			return bytes32('Determine Winner');
 		}
-		else {
-			phase = 'Clear Data';
-			return bytes32('Clear Data');
+		else if (block.number > startBlock) {
+			phase = 'No Lottery';
+			noLottery = true;
+			return bytes32('No Lottery');
 		}
 	}
+	
+	//"0x616e3a2bd2a207d032423bcf0582d827206ba4ac154da2cf8dd19019b60733cd"   1069487650
+	//4,1,16,1,10,5,5,5,5
+	
+	//0xca35b7d915458ef540ade6068dfe2f44e8fa733c
+	
+	tempBlock - startBlock <= commitBlocks && tempBlock > startBlock) {
+			phase = 'Commit Tickets';
+			return bytes32('Commit Tickets');
+		}
+		else if (tempBlock - startBlock <= commitBlocks + revealBlocks && tempBlock - startBlock > commitBlocks) {
+	
 
 	function createLottery(
 		uint _solverFees, 
@@ -153,16 +166,30 @@ contract NoLimitLottery is owned {
 		solverFees =  _solverFees;
 		houseFees = _houseFees;
 		difficulty = _difficulty;
-		ticketPrice = _ticketPrice;
+		ticketPrice = _ticketPrice * 1 ether;
+		secretLength = _secretLength;
 		commitBlocks = _commitBlocks;
 		revealBlocks = _revealBlocks;
 		solutionBlocks = _solutionBlocks;
 		solutionRevealBlocks = _solutionRevealBlocks;
 		
-		startBlock = block.number;
+		// Reset counts so future lotteries only process tickets for that lottery
 		
-		phase = 'Commit Tickets';
+		for (uint i = 0; i < addrPlayersCount; i++) {
+			ticketCounts[addrPlayers[i]] = 0;
+		}
+		
+		addrPlayersCount = 0;
+		addrSolversCount = 0;
+		winnersCount = 0;
+		
+		finalSeed = bytes32(0);
+		correctSolution = bytes32(0);
+		totalSolverBets = 0;
+		
+		startBlock = block.number;
 		noLottery = false;
+		phase = 'Commit Tickets';
 	}
 
 	function commitTicket(bytes32 _hashCommit) checkPhase(bytes32('commitTicket')) {
@@ -171,23 +198,31 @@ contract NoLimitLottery is owned {
 		// send too little throw an error
 		
 		if (msg.value > ticketPrice) {
-			msg.sender.send(msg.value - ticketPrice * 1 ether);
+			msg.sender.send(msg.value - ticketPrice);
 		}
 		if (msg.value < ticketPrice) {
 			msg.sender.send(msg.value);
 			throw;
 		}
 		
-		tickets[msg.sender].push(Ticket({
-			hashCommit : _hashCommit, 
-			secretNumber : 0,
-			validTicket : false
-		}));
+		if (tickets[msg.sender].length == ticketCounts[msg.sender]) {
+			tickets[msg.sender].length++;
+		}
+		tickets[msg.sender][ticketCounts[msg.sender]] = Ticket({
+															hashCommit : _hashCommit, 
+															secretNumber : 0,
+															validTicket : false
+														});
+		ticketCounts[msg.sender] += 1;
+		
+		if (addrPlayers.length == addrPlayersCount) {
+			addrPlayers.length++;
+		}
+		addrPlayers[addrPlayersCount] = msg.sender;
+		addrPlayersCount++;
 	}
 	
 	function revealTicket(uint _secretNumber) checkPhase(bytes32('revealTicket')) {
-	
-		bool hasValidTicket; 
 	
 		// Verify that the secret random number chosen by the player was of the specified length 
 	
@@ -197,36 +232,36 @@ contract NoLimitLottery is owned {
 		
 		// Verify that a player has a ticket with the secret number 
 		
-		for (uint i = 0; i < tickets[msg.sender].length; i++) {
+		for (uint i = 0; i < ticketCounts[msg.sender]; i++) {
 			if (sha3(msg.sender, _secretNumber) == tickets[msg.sender][i].hashCommit) {
 				tickets[msg.sender][i].secretNumber = _secretNumber;
 				tickets[msg.sender][i].validTicket = true;
-				hasValidTicket = true;
 			}
-		}
-		
-		if (hasValidTicket) {
-			addrSubmittedValidTicket.push(msg.sender);
 		}
 	}
 	
 	function determineSeed() checkPhase(bytes32('determineSeed')) {
 	
-		uint _numberSeed = 0; 
+		uint numberSeed = 0; 
 		
 		// Combine the player numbers using bitwise exclusive or
 		
-		for (uint i = 0; i < addrSubmittedValidTicket.length; i++) {
-			for (uint j = 0; j < tickets[addrSubmittedValidTicket[i]].length; j++) {
-				if (tickets[addrSubmittedValidTicket[i]][j].validTicket) {
-					_numberSeed ^= tickets[addrSubmittedValidTicket[i]][j].secretNumber; 
+		for (uint i = 0; i < addrPlayersCount; i++) {
+			for (uint j = 0; j < ticketCounts[addrPlayers[i]]; j++) {
+				if (tickets[addrPlayers[i]][j].validTicket) {
+					numberSeed ^= tickets[addrPlayers[i]][j].secretNumber; 
 				}
 			}
 		}
 		
-		// Perform a final hash on the seed number (is this necessary?)
+		// XOR the numberSeed with the blockhash...in cases where the 2nd to last ticket reveal might be in a previous block this ensures that a last
+		// reveal attacker has no more time than a single block to try to calculate the final random number possibilities
 		
-		finalSeed = sha3(_numberSeed);
+		numberSeed ^= uint(block.blockhash(block.number - 1));
+		
+		// Perform a final hash on the seed number
+		
+		finalSeed = sha3(numberSeed);
 		
 		seedBlock = block.number;
 	}
@@ -249,6 +284,12 @@ contract NoLimitLottery is owned {
 				points : 0
 			});
 			totalSolverBets += msg.value;
+			
+			if (addrSolvers.length == addrSolversCount) {
+				addrSolvers.length++;
+			}
+			addrSolvers[addrSolversCount] = msg.sender;
+			addrSolversCount++;
 		}
 	}
 	
@@ -264,8 +305,6 @@ contract NoLimitLottery is owned {
 				if (uint(sha3(finalSeed, _nonce)) <  (2 ** 256 - 1) / difficulty ) {
 					solutions[msg.sender].nonce = _nonce;
 					solutions[msg.sender].validSolution = true;
-					
-					addrWithValidSolutions.push(msg.sender);
 				}
 			}
 		}
@@ -273,6 +312,7 @@ contract NoLimitLottery is owned {
 	
 	function determineWinner() checkPhase(bytes32('determineWinner')) {
 	
+		uint lowestNonce;
 		uint winningNumber;
 		uint closestDistance = 10 ** secretLength;
 		int distance;
@@ -283,12 +323,14 @@ contract NoLimitLottery is owned {
 
 		// Find the valid solution with the lowest nonce to determine the correct solution 
 		
-		for (uint i = 0; i < addrWithValidSolutions.length; i++) {
-			if (i == 0) {
-				lowestNonce = solutions[addrWithValidSolutions[i]].nonce;
-			}
-			else if (solutions[addrWithValidSolutions[i]].nonce < lowestNonce) {
-				lowestNonce = solutions[addrWithValidSolutions[i]].nonce;
+		for (uint i = 0; i < addrSolversCount; i++) {
+			if (solutions[addrSolvers[i]].validSolution) {
+				if (i == 0) {
+					lowestNonce = solutions[addrSolvers[i]].nonce;
+				}
+				else if (solutions[addrSolvers[i]].nonce < lowestNonce) {
+					lowestNonce = solutions[addrSolvers[i]].nonce;
+				}
 			}
 		}
 		
@@ -298,10 +340,10 @@ contract NoLimitLottery is owned {
 		
 		winningNumber = uint(correctSolution) % (10 ** secretLength - 10 ** (secretLength - 1));
 		
-		for (i = 0; i < addrSubmittedValidTicket.length; i++) {
-			for (uint j = 0; j < tickets[addrSubmittedValidTicket[i]].length; j++) {
-				if (tickets[addrSubmittedValidTicket[i]][j].validTicket) {
-					distance = int(winningNumber - tickets[addrSubmittedValidTicket[i]][j].secretNumber);
+		for (i = 0; i < addrPlayersCount; i++) {
+			for (uint j = 0; j < ticketCounts[addrPlayers[i]]; j++) {
+				if (tickets[addrPlayers[i]][j].validTicket) {
+					distance = int(winningNumber - tickets[addrPlayers[i]][j].secretNumber);
 					
 					if (distance < 0) {
 						distance *= -1;
@@ -309,12 +351,18 @@ contract NoLimitLottery is owned {
 					if (uint(distance) < closestDistance) {
 						closestDistance = uint(distance);
 
-						delete winners;
-						
-						winners[0] = addrSubmittedValidTicket[i];
+						if (winners.length == 0) {
+							winners.length++;
+						}
+						winners[0] = addrPlayers[i];
+						winnersCount = 1;
 					}
 					else if (uint(distance) == closestDistance) {
-						winners[winners.length] = addrSubmittedValidTicket[i];
+						if (winners.length == winnersCount) {
+							winners.length++;
+						}
+						winners[winnersCount] = addrPlayers[i];
+						winnersCount++;
 					}
 				}
 			}
@@ -322,29 +370,29 @@ contract NoLimitLottery is owned {
 		
 		// Calculate how much to pay out per winning ticket 
 		
-		winningPayout = ((100 - (solverFees + houseFees)) * (lotteryBalance - totalSolverBets)) / (100 * winners.length);
+		winningPayout = ((100 - (solverFees + houseFees)) * (lotteryBalance - totalSolverBets)) / (100 * winnersCount);
 		
 		// Pay the winners
 		
-		for (i = 0; i < winners.length; i++) {
+		for (i = 0; i < winnersCount; i++) {
 			winners[i].send(winningPayout);
 		}
 		
 		// Calculate solver rewards
 		
-		for (i = 0; i < addrWithValidSolutions.length; i++) {
-			if (solutions[addrWithValidSolutions[i]].validSolution && solutions[addrWithValidSolutions[i]].nonce == lowestNonce) {
-				solutions[addrWithValidSolutions[i]].points = 10 ** 18 * solutions[addrWithValidSolutions[i]].bet / (solutions[addrWithValidSolutions[i]].blockNumber - seedBlock); // the 10 ** 18 term preserves precision
-				totalPoints += solutions[addrWithValidSolutions[i]].points;
+		for (i = 0; i < addrSolversCount; i++) {
+			if (solutions[addrSolvers[i]].validSolution && solutions[addrSolvers[i]].nonce == lowestNonce) {
+				solutions[addrSolvers[i]].points = 10 ** 18 * solutions[addrSolvers[i]].bet / (solutions[addrSolvers[i]].blockNumber - seedBlock); // the 10 ** 18 term preserves precision
+				totalPoints += solutions[addrSolvers[i]].points;
 			}
 			else {
-				losingBets += solutions[addrWithValidSolutions[i]].bet;
+				losingBets += solutions[addrSolvers[i]].bet;
 			}
 		}
 		
-		for (i = 0; i < addrWithValidSolutions.length; i++) {
-			if (solutions[addrWithValidSolutions[i]].validSolution && solutions[addrWithValidSolutions[i]].nonce == lowestNonce) {
-				addrWithValidSolutions[i].send((solutions[addrWithValidSolutions[i]].points * (solverFees * lotteryBalance + losingBets * 100) / (totalPoints * 10 ** 18 * 100)) + solutions[addrWithValidSolutions[i]].bet);
+		for (i = 0; i < addrSolversCount; i++) {
+			if (solutions[addrSolvers[i]].validSolution && solutions[addrSolvers[i]].nonce == lowestNonce) {
+				addrSolvers[i].send((solutions[addrSolvers[i]].points * (solverFees * lotteryBalance + losingBets * 100) / (totalPoints * 10 ** 18 * 100)) + solutions[addrSolvers[i]].bet);
 			}
 		}
 		
@@ -359,29 +407,22 @@ contract NoLimitLottery is owned {
 		// OPTION TO CALCULATE DIFFICULTY BASED ON PAST LOTTERY 
 	}
 	
-	function clearData() onlyOwner checkPhase(bytes32('clearData')) {
-		difficulty = 0;
-		solverFees = 0;
-		houseFees = 0;
-		ticketPrice = 0;
-		secretLength = 0;
-		finalSeed = bytes32(0);
-		correctSolution = bytes32(0);
-		lowestNonce = 0;
-		totalSolverBets = 0;
-		startBlock = 0;
-		seedBlock = 0;
-		commitBlocks = 0;
-		revealBlocks = 0;
-		solutionBlocks = 0;
-		solutionRevealBlocks = 0;
-	
-		delete addrSubmittedValidTicket;
-		delete addrWithValidSolutions;
-		delete tickets;
-		delete solutions;
+	function destroy() {
 		
-		phase = 'No Lottery';
+		// If there is a bug mid game prior to players/solvers being paid out then refund everyone and destroy the contract
+		
+		if (correctSolution == bytes32(0))
+		{
+			for (uint i = 0; i < addrPlayersCount; i++) {
+				for (uint j = 0; j < ticketCounts[addrPlayers[i]]; j++) {
+					addrPlayers[i].send(1 ether);
+				}
+			}
+			
+			for (i = 0; i < addrSolversCount; i++) {
+				addrSolvers[i].send(solutions[addrSolvers[i]].bet);
+			}
+		}
 	}
 	
 	function () {
