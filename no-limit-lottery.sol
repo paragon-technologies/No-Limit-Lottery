@@ -199,9 +199,9 @@ contract NoLimitLottery is Owned {
 			tickets[msg.sender].length++;
 		}
 		tickets[msg.sender][ticketCounts[msg.sender]] = Ticket({
-															hashCommit : _hashCommit, 
-															secretNumber : 0
-														});
+									hashCommit : _hashCommit, 
+									secretNumber : 0
+								});
 		ticketCounts[msg.sender] += 1;
 		
 		if (addrPlayers.length == addrPlayersCount) {
