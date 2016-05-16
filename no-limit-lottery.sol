@@ -138,12 +138,12 @@ contract NoLimitLottery is Owned {
 		if (phase == 0) {
 			// do nothing
 		}
-		else if (block.number - startBlock <= commitBlocks && block.number > startBlock) {
+		else if (block.number - startBlock <= 600 * commitBlocks && block.number > startBlock) {
 			if (phase != 1) {
 				phase = 1;
 			}
 		}
-		else if (block.number - startBlock <= commitBlocks + revealBlocks && block.number - startBlock > commitBlocks) {
+		else if (block.number - startBlock <= 600 * (commitBlocks + revealBlocks) && block.number - startBlock > 600 * commitBlocks) {
 			if (phase != 2) {
 				phase = 2;
 			}
@@ -153,16 +153,16 @@ contract NoLimitLottery is Owned {
 				phase = 3;
 			}
 		}
-		else if (block.number - seedBlock <= solutionBlocks && block.number > startBlock) {
+		else if (block.number - seedBlock <= 600 * solutionBlocks && block.number > startBlock) {
 			if (phase != 4) {
 				phase = 4;
 			}
 		}
-		// If there are no committed solutions by the end of the phase then extend it by one day's worth of blocks
+		// If there are no committed solutions by the end of the phase then extend it by one day's worth of blocks (12 * 600 = 7200 blocks)
 		else if (addrSolversCount == 0 && block.number > startBlock) {
-			solutionBlocks += 7200;
+			solutionBlocks += 12;
 		}
-		else if (block.number - seedBlock <= solutionBlocks + solutionRevealBlocks && block.number - seedBlock > solutionBlocks && block.number > startBlock) {
+		else if (block.number - seedBlock <= 600 * (solutionBlocks + solutionRevealBlocks) && block.number - seedBlock > 600 * solutionBlocks && block.number > startBlock) {
 			if (phase != 5) {
 				phase = 5;
 			}
