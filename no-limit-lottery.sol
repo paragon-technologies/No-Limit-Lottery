@@ -238,9 +238,9 @@ contract NoLimitLottery is Owned {
 			tickets[msg.sender].length++;
 		}
 		tickets[msg.sender][ticketCounts[msg.sender]] = Ticket({
-															hashCommit : _hashCommit, 
-															secretNumber : 0
-														});
+									hashCommit : _hashCommit, 
+									secretNumber : 0
+								});
 		ticketCounts[msg.sender] += 1;
 		
 		// If this is the player's first ticket for the game add them to the player's list
