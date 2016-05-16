@@ -21,9 +21,11 @@ contract Owned {
 
 contract NoLimitLottery is Owned {
 
+	// CLASS LEVEL VARIABLES
+
 	uint public phase;
 	
-	/* PHASES:
+	/* Phases:
 	0 - 'No Lottery'
 	1 - 'Commit Tickets'
 	2 - 'Reveal Tickets'
@@ -84,6 +86,23 @@ contract NoLimitLottery is Owned {
 		phase = 0;
 	}
 	
+	// EVENTS
+	
+	event Won(
+		address indexed winner,
+		uint64 indexed lotteryId,
+		uint40 winningAmount
+	);
+	
+	event Solved(
+		address indexed solver,
+		uint64 indexed lotteryId,
+		uint64 blockSolved,
+		uint40 rewardAmount
+	);
+	
+	// MODIFIERS
+	
 	modifier checkPhase(uint8 functionNumber) {
 		setPhase();
 		
@@ -113,30 +132,50 @@ contract NoLimitLottery is Owned {
 		}
 	}
 	
+	// FUNCTIONS
+	
 	function setPhase() {
 		if (phase == 0) {
 			// do nothing
 		}
 		else if (block.number - startBlock <= commitBlocks && block.number > startBlock) {
-			phase = 1;
+			if (phase != 1) {
+				phase = 1;
+			}
 		}
 		else if (block.number - startBlock <= commitBlocks + revealBlocks && block.number - startBlock > commitBlocks) {
-			phase = 2;
+			if (phase != 2) {
+				phase = 2;
+			}
 		}
 		else if (finalSeed == bytes32(0) && block.number > startBlock ) {
-			phase = 3;
+			if (phase != 3) {
+				phase = 3;
+			}
 		}
-		else if (block.number - seedBlock <= solutionBlocks && block.number > seedBlock) {
-			phase = 4;
+		else if (block.number - seedBlock <= solutionBlocks && block.number > startBlock) {
+			if (phase != 4) {
+				phase = 4;
+			}
 		}
-		else if (block.number - seedBlock <= solutionBlocks + solutionRevealBlocks && block.number - seedBlock > solutionBlocks) {
-			phase = 5;
+		// If there are no committed solutions by the end of the phase then extend it by one day's worth of blocks
+		else if (addrSolversCount == 0 && block.number > startBlock) {
+			solutionBlocks += 7200;
+		}
+		else if (block.number - seedBlock <= solutionBlocks + solutionRevealBlocks && block.number - seedBlock > solutionBlocks && block.number > startBlock) {
+			if (phase != 5) {
+				phase = 5;
+			}
 		}
 		else if (correctSolution == bytes32(0) && block.number > startBlock) {
-			phase = 6;
+			if (phase != 6) {
+				phase = 6;
+			}
 		}
 		else if (block.number > startBlock) {
-			phase = 0;
+			if (phase != 0) {
+				phase = 0;
+			}
 		}
 	}
 
@@ -199,16 +238,20 @@ contract NoLimitLottery is Owned {
 			tickets[msg.sender].length++;
 		}
 		tickets[msg.sender][ticketCounts[msg.sender]] = Ticket({
-									hashCommit : _hashCommit, 
-									secretNumber : 0
-								});
+															hashCommit : _hashCommit, 
+															secretNumber : 0
+														});
 		ticketCounts[msg.sender] += 1;
 		
-		if (addrPlayers.length == addrPlayersCount) {
-			addrPlayers.length++;
+		// If this is the player's first ticket for the game add them to the player's list
+		
+		if (ticketCounts[msg.sender] == 1) {
+			if (addrPlayers.length == addrPlayersCount) {
+				addrPlayers.length++;
+			}
+			addrPlayers[addrPlayersCount] = msg.sender;
+			addrPlayersCount++;
 		}
-		addrPlayers[addrPlayersCount] = msg.sender;
-		addrPlayersCount++;
 	}
 	
 	function revealTicket(uint64 _secretNumber) checkPhase(2) {
@@ -308,6 +351,7 @@ contract NoLimitLottery is Owned {
 		uint winningPayout;
 		uint totalPoints;
 		uint losingBets;
+		uint solverReward;
 
 		// Find the valid solution with the lowest nonce to determine the correct solution 
 		
@@ -364,6 +408,7 @@ contract NoLimitLottery is Owned {
 		
 		for (i = 0; i < winnersCount; i++) {
 			winners[i].send(winningPayout);
+			Won(winners[i], uint64(block.number), uint40(winningPayout));
 		}
 		
 		// Calculate solver rewards
@@ -380,19 +425,15 @@ contract NoLimitLottery is Owned {
 		
 		for (i = 0; i < addrSolversCount; i++) {
 			if (solutions[addrSolvers[i]].validSolution && solutions[addrSolvers[i]].nonce == lowestNonce) {
-				addrSolvers[i].send((solutions[addrSolvers[i]].points * (solverFees * lotteryBalance + losingBets * 100) / (totalPoints * 10 ** 18 * 100)) + solutions[addrSolvers[i]].bet);
+				solverReward = solutions[addrSolvers[i]].points * (solverFees * lotteryBalance + losingBets * 100) / (totalPoints * 10 ** 18 * 100);
+				addrSolvers[i].send(solverReward + solutions[addrSolvers[i]].bet);
+				Solved(addrSolvers[i], uint64(block.number), uint64(solutions[addrSolvers[i]].blockNumber), uint40(solverReward));
 			}
 		}
 		
 		// Pay out house fees
 		
 		owner.send(this.balance);
-		
-		// CREATE EVENT FOR WINNING DATA AND RESET CORRECT SOLUTION 
-		
-		// SOMETHING FOR IF NO ONE CAN SOLVE FOR THE SOLUTION IN TIME
-		
-		// OPTION TO CALCULATE DIFFICULTY BASED ON PAST LOTTERY 
 	}
 	
 	function destroy() {
